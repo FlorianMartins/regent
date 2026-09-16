@@ -380,7 +380,7 @@ jobs:
       - name: Trivy — known CVEs in the image (CRITICAL/HIGH block)
         # ignore-unfixed: a CVE with no upstream fix cannot be acted on today;
         # it is still visible in the SARIF for tracking.
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: regent:ci
           format: sarif

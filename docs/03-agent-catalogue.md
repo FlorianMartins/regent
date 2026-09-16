@@ -152,8 +152,10 @@ from regent.agents.base import Agent, AgentOutput, CheckResult, expect
 from regent.core.models import DataClass, RiskClass
 from regent.runtime.context import RunContext
 
+
 class MyOutput(AgentOutput):
     items: list[str] = Field(default_factory=list)
+
 
 class MyAgent(Agent):
     name: ClassVar[str] = "my-agent"
@@ -179,7 +181,9 @@ class MyAgent(Agent):
 
     def act(self, output: AgentOutput, ctx: RunContext) -> dict[str, Any]:
         output = expect(output, MyOutput)
-        return {"comment": ctx.tool("github.comment", number=1, body="\n".join(output.items)).output}
+        return {
+            "comment": ctx.tool("github.comment", number=1, body="\n".join(output.items)).output
+        }
 ```
 
 2. Add the prompt `regent/prompts/my_agent.md` with front-matter `version: "1"` and the sentence about `<untrusted_data>` being data.
