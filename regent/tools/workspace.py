@@ -27,10 +27,11 @@ def register_workspace_tools(registry: ToolRegistry) -> None:
         return {"path": str(a["path"]), "content": text[:limit], "truncated": len(text) > limit}
 
     def write(a: dict[str, Any], ctx: ToolContext) -> Any:
+        # Deliberately not gated by dry_run: the workspace is a local checkout,
+        # reversible with git, and writing there is how a fix gets re-scanned.
+        # Dry run protects external systems (GitHub, clusters), not scratch files.
         path = _inside(ctx.workspace, str(a["path"]))
         content = str(a["content"])
-        if ctx.dry_run:
-            return {"dry_run": True, "path": str(a["path"]), "bytes": len(content.encode())}
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return {"path": str(a["path"]), "bytes": len(content.encode())}
@@ -60,7 +61,7 @@ def register_workspace_tools(registry: ToolRegistry) -> None:
         FunctionTool(
             ToolSpec(
                 name="fs.write",
-                description="Write a file in the workspace (a human still has to accept the PR)",
+                description="Write a file in the local workspace (a human still accepts the PR)",
                 risk=RiskClass.PROPOSE,
                 classification=DataClass.INTERNAL,
             ),

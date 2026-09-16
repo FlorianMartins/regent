@@ -54,7 +54,9 @@ def test_workspace_tools_are_jailed(tmp_path: Path):
     assert reg.get("fs.read").run({"path": "a.txt"}, ctx(tmp_path)).output["content"] == "hello"
     escaped = reg.get("fs.read").run({"path": "../../etc/passwd"}, ctx(tmp_path))
     assert not escaped.ok and "escapes" in escaped.error
-    written = reg.get("fs.write").run({"path": "sub/b.txt", "content": "x"}, ctx(tmp_path))
+    written = reg.get("fs.write").run(
+        {"path": "sub/b.txt", "content": "x"}, ctx(tmp_path, dry_run=True)
+    )
     assert written.ok and (tmp_path / "sub" / "b.txt").exists()
     listing = reg.get("fs.list").run({}, ctx(tmp_path))
     assert set(listing.output["files"]) == {"a.txt", "sub/b.txt"}

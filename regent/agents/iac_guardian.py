@@ -117,15 +117,6 @@ class IaCGuardian(Agent):
                 )
             )
             return results
-        if ctx.dry_run:
-            results.append(
-                CheckResult(
-                    check="cloudguard_clean_after_fix",
-                    passed=True,
-                    detail="dry run: files not written, re-scan skipped",
-                )
-            )
-            return results
         ctx.set_phase_gate(RiskClass.PROPOSE)  # writing to the workspace is a proposal
         for change in output.changes:
             ctx.tool("fs.write", path=change.path, content=change.content)

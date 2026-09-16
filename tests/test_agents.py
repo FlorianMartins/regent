@@ -220,18 +220,19 @@ def test_iac_guardian_nothing_to_fix(runner, tmp_path: Path):
     assert len(replay.requests) == 1  # only the critic ran
 
 
-def test_iac_guardian_dry_run_skips_rescan(runner, tmp_path: Path):
+def test_iac_guardian_dry_run_still_rescans_but_opens_no_pr(runner, tmp_path: Path):
     (tmp_path / "main.tf").write_text(VULNERABLE_TF)
-    record, _, _ = runner(
+    record, github, _ = runner(
         "iac-guardian",
         model={"iac_guardian@1": [guardian_answer(FIXED_TF)], "verifier@1": [ACCEPT]},
         workspace=tmp_path,
         dry_run=True,
         paths=["main.tf"],
     )
-    assert (
-        record.status is RunStatus.SUCCEEDED and (tmp_path / "main.tf").read_text() == VULNERABLE_TF
-    )
+    assert record.status is RunStatus.SUCCEEDED, record.error
+    assert (tmp_path / "main.tf").read_text() == FIXED_TF  # local write: the fix is verifiable
+    assert github.writes == []  # external write: only described
+    assert record.output["actions"]["pull_request"]["dry_run"] is True
 
 
 # --- incident triage -----------------------------------------------------------
