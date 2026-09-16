@@ -1,0 +1,242 @@
+# =============================================================================
+# Release — on a `vX.Y.Z` tag: build, attest, sign, publish.
+#
+# What a consumer gets, and how they can check it (see scripts/verify_release.sh):
+#   - the wheel and sdist, with SLSA build provenance (`gh attestation verify`)
+#   - the multi-arch container image on GHCR, signed with cosign (keyless, Sigstore)
+#     and carrying provenance + SBOM attestations
+#   - the SBOM (SPDX JSON) attached to the GitHub release and attested
+#   - a VERIFY.md on the release with the exact verification commands
+#
+# "Keyless" signing means there is no private key to leak: the OIDC identity of
+# this workflow run signs, and the Sigstore transparency log records it.
+# =============================================================================
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/florianmartins/regent
+  PYTHON_DEFAULT: "3.12"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Python distribution — built once, attested, reused by every later job
+  # ---------------------------------------------------------------------------
+  dist:
+    name: Build & attest the distribution
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for the attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: The tag must match the package version
+        run: |
+          pip install -e . --quiet
+          version="$(regent --version | awk '{print $2}')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::package version $version does not match tag $tag (bump regent/__init__.py)"
+            exit 1
+          fi
+
+      - name: Build the wheel and the sdist
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          twine check dist/*
+
+      - name: Attest the build provenance of the distribution (SLSA)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  # ---------------------------------------------------------------------------
+  # 2. Container image — multi-arch, pushed to GHCR, signed and attested
+  # ---------------------------------------------------------------------------
+  image:
+    name: Build, sign & attest the image
+    runs-on: ubuntu-latest
+    needs: [dist]
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+      id-token: write # keyless signing and attestations
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags and OCI labels from the git tag)
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push (linux/amd64, linux/arm64)
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # BuildKit attaches its own provenance and SBOM to the image index.
+          provenance: true
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Sign the image by digest (keyless)
+        # Signing the digest, not the tag: a tag can be moved, a digest cannot.
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - name: SBOM of the pushed image (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Attest the build provenance of the image (SLSA)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest the SBOM of the image
+        uses: actions/attest-sbom@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  # ---------------------------------------------------------------------------
+  # 3. GitHub release — artefacts plus the instructions to verify them
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish the GitHub release
+    runs-on: ubuntu-latest
+    needs: [dist, image]
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: sbom
+          path: sbom/
+
+      - name: Write VERIFY.md
+        env:
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          cat > VERIFY.md <<EOT
+          # Verifying release ${GITHUB_REF_NAME}
+
+          Image: \`${IMAGE}@${DIGEST}\`
+
+          ## Signature (cosign, keyless)
+          \`\`\`bash
+          cosign verify "${IMAGE}@${DIGEST}" \\
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@" \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          \`\`\`
+
+          ## Build provenance (SLSA, GitHub attestations)
+          \`\`\`bash
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --owner ${GITHUB_REPOSITORY_OWNER}
+          gh attestation verify dist/regent_platform-${GITHUB_REF_NAME#v}-py3-none-any.whl --owner ${GITHUB_REPOSITORY_OWNER}
+          \`\`\`
+
+          ## SBOM
+          \`sbom.spdx.json\` is attached to this release and attested on the image:
+          \`\`\`bash
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --owner ${GITHUB_REPOSITORY_OWNER} --predicate-type https://spdx.dev/Document/v2.3
+          \`\`\`
+
+          Or run \`scripts/verify_release.sh ${GITHUB_REF_NAME}\` from a checkout.
+          EOT
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          body_path: VERIFY.md
+          files: |
+            dist/*
+            sbom/sbom.spdx.json
+            VERIFY.md
+
+  # ---------------------------------------------------------------------------
+  # 4. PyPI — trusted publishing (OIDC), no long-lived token anywhere.
+  #    One-time setup: create the `pypi` environment in the repository settings
+  #    and register this workflow as a trusted publisher on pypi.org.
+  # ---------------------------------------------------------------------------
+  pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [release]
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1

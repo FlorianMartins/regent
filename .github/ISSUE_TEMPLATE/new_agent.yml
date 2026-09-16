@@ -1,0 +1,45 @@
+name: New agent proposal
+description: Propose an automation the platform should run under a mandate.
+labels: ["agent", "proposal"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Agent name
+      placeholder: e.g. drift-sentinel
+    validations:
+      required: true
+  - type: textarea
+    id: job
+    attributes:
+      label: What toil does it remove?
+      description: The trigger, the inputs it reads, the output humans get.
+    validations:
+      required: true
+  - type: dropdown
+    id: autonomy
+    attributes:
+      label: Highest autonomy it needs
+      options: ["L0_OBSERVE", "L1_ADVISE", "L2_PROPOSE", "L3_ACT_REVERSIBLE"]
+    validations:
+      required: true
+  - type: textarea
+    id: tools
+    attributes:
+      label: Tools it needs
+      description: Existing tool names, or new ones with their risk class.
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Deterministic checks the verifier can run on its output
+      description: What can be checked without a model? (a re-scan, a test run, a schema, a diff of touched files…)
+    validations:
+      required: true
+  - type: textarea
+    id: failure
+    attributes:
+      label: Worst plausible failure, and why the mandate bounds it
+    validations:
+      required: true

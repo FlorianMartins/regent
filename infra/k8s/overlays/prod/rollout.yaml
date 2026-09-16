@@ -1,0 +1,107 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: regent
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: regent
+  strategy:
+    canary:
+      canaryService: regent-canary
+      stableService: regent
+      analysis:
+        templates:
+          - templateName: regent-run-failure-rate
+        startingStep: 1
+        args:
+          - name: canary-pod-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+      steps:
+        - setWeight: 20
+        - pause: { duration: 10m }
+        - setWeight: 50
+        - pause: { duration: 10m }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: regent
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: regent
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: regent
+          image: ghcr.io/florianmartins/regent:0.1.0
+          imagePullPolicy: IfNotPresent
+          args: ["serve", "--host", "0.0.0.0", "--port", "8080"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: regent-config
+            - secretRef:
+                name: regent-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: regent-ledger
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: regent-ledger
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi

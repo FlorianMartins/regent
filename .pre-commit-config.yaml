@@ -1,0 +1,72 @@
+# Local guardrails: the same gates as the CI pipeline, before the commit exists.
+#   pip install pre-commit && pre-commit install
+default_language_version:
+  python: python3.12
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+        # Kustomize and Argo files are multi-document; Grafana dashboards are JSON.
+        args: [--allow-multiple-documents]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      # A credential caught here never enters the history; one caught in CI already has.
+      - id: gitleaks
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+
+  - repo: local
+    hooks:
+      # mypy runs from the project virtualenv so it sees the real dependencies.
+      - id: mypy
+        name: mypy (strict)
+        entry: .venv/bin/mypy
+        language: system
+        pass_filenames: false
+        files: ^regent/
+
+      # A mandate that grants L4_ACT or a wildcard tool list must not be committable.
+      - id: regent-policy-check
+        name: Regent mandate invariants
+        entry: .venv/bin/regent policy-check
+        language: system
+        pass_filenames: false
+        files: ^(policies/mandates/|regent/(bootstrap|cli/main)\.py)
+
+      # CloudGuard scanning the infrastructure this repository ships.
+      - id: cloudguard
+        name: CloudGuard-IaC
+        entry: .venv/bin/cloudguard full-scan infra Dockerfile --fail-on medium
+        language: system
+        pass_filenames: false
+        files: \.(tf|tfvars)$|(^|/)Dockerfile
+
+      # A prompt or skill change without a version bump silently reuses old eval fixtures.
+      - id: prompt-version-reminder
+        name: prompt/skill changed — did you bump `version` and add an eval case?
+        entry: bash -c 'echo "reminder — prompt or skill changed, bump its version and add an eval case (see CONTRIBUTING.md)"; exit 0'
+        language: system
+        pass_filenames: false
+        files: ^regent/(prompts|skills/library)/

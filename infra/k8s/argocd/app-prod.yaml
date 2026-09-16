@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: regent-prod
+  namespace: argocd
+spec:
+  project: regent
+  source:
+    repoURL: https://github.com/FlorianMartins/regent.git
+    # prod tracks release tags, not main: a deploy is a tag, and a tag is signed and attested.
+    targetRevision: v0.1.0
+    path: infra/k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: regent
+  # No `automated` block: a human syncs prod from the Argo CD UI or CLI, and the
+  # Rollout's canary analysis decides whether the release is promoted.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

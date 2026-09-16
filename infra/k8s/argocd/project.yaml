@@ -1,0 +1,32 @@
+# The AppProject is the blast-radius boundary in Argo CD: only this repository,
+# only these namespaces, only these resource kinds. A compromised application
+# manifest cannot create a ClusterRole or deploy into kube-system.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: regent
+  namespace: argocd
+spec:
+  description: Regent control plane
+  sourceRepos:
+    - https://github.com/FlorianMartins/regent.git
+  destinations:
+    - namespace: regent
+      server: https://kubernetes.default.svc
+    - namespace: regent-staging
+      server: https://kubernetes.default.svc
+    - namespace: regent-dev
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceBlacklist:
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+  roles:
+    - name: readonly
+      description: Read-only access for the on-call
+      policies:
+        - p, proj:regent:readonly, applications, get, regent/*, allow

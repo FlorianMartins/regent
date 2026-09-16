@@ -1,0 +1,18 @@
+# Prometheus scrapes the control plane every 15 s. The metric names are defined
+# in regent/observability/metrics.py; the Grafana dashboard reads them.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: regent
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["regent-api:8080"]
+        labels:
+          service: regent
+          environment: local
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

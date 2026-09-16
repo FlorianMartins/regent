@@ -1,0 +1,32 @@
+name: Bug report
+description: Something in the platform (not an agent's judgement) is broken.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`regent --version`, or the image digest"
+    validations:
+      required: true
+  - type: dropdown
+    id: shape
+    attributes:
+      label: How is Regent running?
+      options: ["CLI in a CI job", "API server (docker compose)", "Kubernetes", "Local development"]
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproducer
+      description: The command or request, the mandate file if relevant, and what happened. Redact repository data.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true

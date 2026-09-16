@@ -1,0 +1,32 @@
+# Base — everything an environment needs, with the strictest defaults.
+# Overlays only change replicas, resources, environment values and the
+# rollout strategy; they never loosen the security context.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: regent
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - externalsecret.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+  - servicemonitor.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: regent
+      app.kubernetes.io/part-of: regent
+      app.kubernetes.io/managed-by: argocd
+    includeSelectors: true
+
+images:
+  # Immutable tag today; pin the digest when you promote to prod:
+  #   newTag: 0.1.0@sha256:<digest from the release workflow>
+  - name: ghcr.io/florianmartins/regent
+    newTag: 0.1.0

@@ -1,0 +1,52 @@
+version: 2
+
+updates:
+  # Python dependencies — a vulnerable transitive package is a supply-chain issue,
+  # and pip-audit only tells us after the fact. dependency-steward assesses these PRs.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  # The actions used by the pipelines. Pinned to a major version, so this catches
+  # deprecations (Node runtime, for one) before the runners force them on us.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "chore(ci)"
+
+  # The base image of the control plane.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "chore(docker)"
+
+  # The images of the local observability stack.
+  - package-ecosystem: docker-compose
+    directory: "/infra/compose"
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "chore(compose)"
+
+  # Terraform providers of the AWS bootstrap.
+  - package-ecosystem: terraform
+    directory: "/infra/terraform"
+    schedule:
+      interval: monthly
+    labels: ["dependencies", "terraform"]
+    commit-message:
+      prefix: "chore(terraform)"

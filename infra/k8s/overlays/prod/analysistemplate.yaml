@@ -1,0 +1,23 @@
+# The canary is promoted only if fewer than 5 % of its runs fail. "Failed"
+# here excludes `denied` and `awaiting_approval`: those are the mandates
+# working, not the release breaking.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: regent-run-failure-rate
+spec:
+  args:
+    - name: canary-pod-hash
+  metrics:
+    - name: run-failure-rate
+      interval: 2m
+      count: 5
+      successCondition: result[0] < 0.05
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus-operated.monitoring.svc:9090
+          query: |
+            sum(rate(regent_runs_total{status=~"failed|budget_exceeded", rollouts_pod_template_hash="{{args.canary-pod-hash}}"}[5m]))
+            /
+            clamp_min(sum(rate(regent_runs_total{rollouts_pod_template_hash="{{args.canary-pod-hash}}"}[5m])), 0.001)

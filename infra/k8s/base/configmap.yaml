@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: regent-config
+data:
+  # Non-secret configuration. Secrets come from the ExternalSecret.
+  REGENT_PROVIDER: anthropic
+  REGENT_MANDATES_DIR: /app/policies/mandates
+  REGENT_LEDGER: /data/ledger.jsonl
+  REGENT_WORKSPACE: /data/workspace
+  PROMETHEUS_URL: http://prometheus-operated.monitoring.svc:9090
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc:4318
+  OTEL_SERVICE_NAME: regent

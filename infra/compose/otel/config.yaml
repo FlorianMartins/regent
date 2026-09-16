@@ -1,0 +1,23 @@
+# Minimal collector: receive OTLP over HTTP from the control plane, print the
+# spans. In production replace the `debug` exporter with your tracing backend
+# (Tempo, Jaeger, an APM vendor) — the application side does not change.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+
+exporters:
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

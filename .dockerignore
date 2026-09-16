@@ -1,0 +1,35 @@
+# Keep the build context minimal: everything not listed in the Dockerfile's COPY
+# lines is irrelevant, and anything sensitive must never reach a layer.
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+site/
+reports/
+.regent/
+tests/
+docs/
+evals/
+examples/
+infra/
+scripts/
+.env
+.env.*
+*.pem
+*.key
+*.tfstate*
+.terraform/
+Makefile
+.pre-commit-config.yaml
+mkdocs.yml

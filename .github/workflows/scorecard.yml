@@ -1,0 +1,46 @@
+# OpenSSF Scorecard — an independent audit of the repository's security posture
+# (branch protection, pinned dependencies, signed releases, dangerous workflow
+# patterns, …). `publish_results: true` makes the score public and powers the
+# badge in the README. Requires `id-token: write` to sign the result.
+name: OpenSSF Scorecard
+
+on:
+  branch_protection_rule:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 3"
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # to upload the SARIF
+      id-token: write # to publish the signed result
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Run analysis
+        uses: ossf/scorecard-action@v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif

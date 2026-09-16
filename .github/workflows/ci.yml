@@ -1,0 +1,436 @@
+# =============================================================================
+# CI — every gate a change must pass before it can reach `main`.
+#
+# Reading guide for newcomers: each job answers one question.
+#   quality      Is the code well-formed?          (ruff, mypy, actionlint)
+#   test         Does it behave?                   (pytest on 3 Python versions, offline)
+#   sast         Does our own code have known weaknesses? (bandit, pip-audit, semgrep)
+#   secrets      Did a credential slip into git?   (gitleaks)
+#   iac-security Is the infrastructure we ship secure? (CloudGuard-IaC, Conftest/OPA)
+#   policy       Do the agent mandates respect the invariants? (regent policy-check)
+#   evals        Do the agents still behave on recorded cases? (regent evals)
+#   docs         Does the documentation build?     (mkdocs --strict)
+#   build        Can the package be built and installed cleanly?
+#   container    Can the image be built, and is it free of known CVEs? (Trivy, SBOM)
+#   ci           One status check to protect the branch with.
+#
+# Nothing here needs an LLM key: tests and evals use the replay provider.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly: dependency advisories and base-image CVEs appear without a commit of ours.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+# Least privilege by default; jobs opt into what they need.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_DEFAULT: "3.12"
+  FORCE_COLOR: "1"
+  # Pinned tool versions with their SHA-256, so a compromised release cannot slip in.
+  KUSTOMIZE_VERSION: "5.6.0"
+  KUSTOMIZE_SHA256: "54e4031ddc4e7fc59e408da29e7c646e8e57b8088c51b84b3df0864f47b5148f"
+  CONFTEST_VERSION: "0.62.0"
+  CONFTEST_SHA256: "284231908e4cf66d156e5577c3eee2f67d9f2edf2521fa2309e0df1969f871e5"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Code quality — formatting, linting, typing, and the workflows themselves
+  # ---------------------------------------------------------------------------
+  quality:
+    name: Lint & types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the project
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Ruff — lint
+        run: ruff check --output-format=github .
+
+      - name: Ruff — formatting
+        run: ruff format --check --diff .
+
+      - name: Mypy — static types (strict)
+        run: mypy
+
+      - name: Actionlint — the workflows themselves
+        # A syntax error in a workflow cancels the run before any job starts,
+        # so the pipeline cannot be the thing that catches it.
+        run: actionlint
+
+  # ---------------------------------------------------------------------------
+  # 2. Tests — every supported Python version, fully offline
+  # ---------------------------------------------------------------------------
+  test:
+    name: Tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the project
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Pytest (replay provider, fake GitHub — no network, no key)
+        run: pytest --cov=regent --cov-report=term-missing --cov-report=xml
+
+      - name: Upload the coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # 3. SAST — we scan our own source code and dependencies
+  # ---------------------------------------------------------------------------
+  sast:
+    name: SAST & dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the project
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Bandit — Python SAST
+        run: bandit -q -c pyproject.toml -r regent
+
+      - name: pip-audit — known vulnerabilities in dependencies
+        # --skip-editable ignores the project itself (installed in editable mode).
+        run: pip-audit --skip-editable
+
+      - name: Semgrep — extended rulesets
+        # Advisory: Semgrep pulls its rules from a remote registry, so a network
+        # hiccup must not turn into a red build. Bandit above is the blocking gate.
+        continue-on-error: true
+        run: |
+          pip install semgrep
+          semgrep scan --config p/python --config p/security-audit --error --quiet regent
+
+  # ---------------------------------------------------------------------------
+  # 4. Secrets — a credential in the history is an incident, not a lint warning
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # gitleaks scans commits, so it needs the history, not just the tree.
+          fetch-depth: 0
+
+      - name: Gitleaks
+        # Free for personal repositories; organisations need GITLEAKS_LICENSE.
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # 5. Infrastructure security — the Terraform, Kubernetes and Docker we ship
+  # ---------------------------------------------------------------------------
+  iac-security:
+    name: IaC security (CloudGuard + Conftest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Install CloudGuard-IaC
+        # The DevSecOps scanner this platform builds on. It reads Terraform and
+        # Dockerfiles, never runs them, never needs cloud credentials.
+        run: |
+          python -m pip install --upgrade pip
+          pip install "cloudguard-iac @ git+https://github.com/FlorianMartins/cloudguard-iac@main"
+
+      - name: CloudGuard — Terraform, Compose, Kubernetes and the Dockerfile
+        # MEDIUM and above blocks: the infrastructure of a security platform is
+        # held to a stricter threshold than the default HIGH.
+        run: cloudguard full-scan infra Dockerfile --fail-on medium --details
+
+      - name: CloudGuard — SARIF for code scanning
+        run: cloudguard full-scan infra Dockerfile --fail-on never -F sarif -o reports/cloudguard.sarif
+
+      - name: Upload the CloudGuard SARIF
+        # Code scanning needs GHAS on private repositories; on public ones it is free.
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: reports/cloudguard.sarif
+          category: cloudguard-iac
+
+      - name: Install kustomize and conftest (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -sSL -o kustomize.tgz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          echo "${KUSTOMIZE_SHA256}  kustomize.tgz" | sha256sum -c -
+          tar xzf kustomize.tgz && sudo mv kustomize /usr/local/bin/
+          curl -sSL -o conftest.tgz "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          echo "${CONFTEST_SHA256}  conftest.tgz" | sha256sum -c -
+          tar xzf conftest.tgz && sudo mv conftest /usr/local/bin/
+          kustomize version && conftest --version
+
+      - name: Conftest — unit tests of the policies themselves
+        run: conftest verify -p policies/rego
+
+      - name: Conftest — Kubernetes manifests of every environment
+        # Render each overlay the way Argo CD would, then apply the pod-security policy.
+        run: |
+          set -euo pipefail
+          for env in dev staging prod; do
+            echo "::group::overlay $env"
+            kustomize build "infra/k8s/overlays/$env" > "rendered-$env.yaml"
+            conftest test -p policies/rego --namespace kubernetes "rendered-$env.yaml"
+            echo "::endgroup::"
+          done
+
+      - name: Conftest — the agent mandates
+        # The same invariants as `regent policy-check`, expressed in Rego so a
+        # cluster admission controller can enforce them too.
+        run: conftest test -p policies/rego --namespace mandates --parser yaml policies/mandates/
+
+      - name: Conftest — Terraform source (HCL)
+        run: conftest test -p policies/rego --namespace terraform --parser hcl2 infra/terraform/
+
+  # ---------------------------------------------------------------------------
+  # 6. Policy — the mandates respect the invariants no mandate may break
+  # ---------------------------------------------------------------------------
+  policy:
+    name: Mandate invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the project
+        run: python -m pip install --upgrade pip && pip install -e .
+
+      - name: regent policy-check
+        # Refuses L4_ACT, wildcard allow-lists, unknown tools, budgets above 20 USD,
+        # and an agent with no mandate at all.
+        run: regent policy-check
+
+      - name: Show the resolved mandates
+        run: regent mandates
+
+  # ---------------------------------------------------------------------------
+  # 7. Evals — the agents are tested like code, on recorded cases
+  # ---------------------------------------------------------------------------
+  evals:
+    name: Agent evals (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the project
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Run the eval suite with the replay provider
+        run: regent evals --report reports/evals.json
+
+      - name: Publish the summary in the job page
+        if: always()
+        run: |
+          {
+            echo "## 🧪 Agent evals"
+            echo
+            echo '```'
+            python -c "import json; r=json.load(open('reports/evals.json')); [print(('PASS' if x['passed'] else 'FAIL'), x['agent'].ljust(20), x['case'], '-', x['detail']) for x in r]"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the eval report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evals-report
+          path: reports/evals.json
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 8. Documentation — a broken link or a missing page fails the build
+  # ---------------------------------------------------------------------------
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Build the site (strict)
+        run: |
+          if [ -f mkdocs.yml ]; then
+            python -m pip install --upgrade pip && pip install -e ".[docs]"
+            mkdocs build --strict
+          else
+            echo "no mkdocs.yml yet — nothing to build"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # 9. Packaging — the wheel and sdist must always be buildable and installable
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build the distribution
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_DEFAULT }}
+
+      - name: Build the wheel and the sdist
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          twine check dist/*
+
+      - name: Smoke-test the wheel in a clean environment
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/regent --version
+          /tmp/smoke/bin/regent agents
+          /tmp/smoke/bin/regent skills
+
+      - name: Upload the distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # 10. Container image — build it, run it, scan it, describe it
+  # ---------------------------------------------------------------------------
+  container:
+    name: Container image
+    runs-on: ubuntu-latest
+    needs: [test]
+    permissions:
+      contents: read
+      security-events: write # SARIF upload of the Trivy results
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t regent:ci .
+
+      - name: The image must run
+        run: |
+          docker run --rm regent:ci --version
+          docker run --rm regent:ci agents
+
+      - name: Trivy — known CVEs in the image (CRITICAL/HIGH block)
+        # ignore-unfixed: a CVE with no upstream fix cannot be acted on today;
+        # it is still visible in the SARIF for tracking.
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: regent:ci
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Upload the Trivy SARIF
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-image
+
+      - name: SBOM — what exactly is inside the image (SPDX)
+        # Syft lists every package with its version; the release workflow attests it.
+        uses: anchore/sbom-action@v0
+        with:
+          image: regent:ci
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom-spdx
+          path: sbom.spdx.json
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # 11. Final gate — one required status check to protect the branch with
+  # ---------------------------------------------------------------------------
+  ci:
+    name: CI complete
+    runs-on: ubuntu-latest
+    needs: [quality, test, sast, secrets, iac-security, policy, evals, docs, build, container]
+    if: always()
+    steps:
+      - name: Fail when any job failed
+        run: |
+          # GitHub expressions only accept single-quoted string literals.
+          results='${{ join(needs.*.result, ' ') }}'
+          echo "job results: $results"
+          for result in $results; do
+            if [ "$result" != "success" ]; then
+              echo "::error::a required job did not succeed"
+              exit 1
+            fi
+          done
+          echo "✅ every job succeeded"

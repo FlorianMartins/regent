@@ -1,0 +1,21 @@
+{
+  "by_prompt": {
+    "pr_reviewer@1": [
+      {
+        "json": {
+          "summary": "Replay demo: no scripted findings; run with ANTHROPIC_API_KEY for a live review.",
+          "confidence": 0.5,
+          "evidence": ["replay provider — scripted answer, the diff was read but not analysed by a model"],
+          "findings": [],
+          "diff_truncated": false
+        },
+        "input_tokens": 1200,
+        "output_tokens": 80,
+        "usd": 0.0
+      }
+    ],
+    "verifier@1": [
+      { "json": { "accept": true, "issues": [], "confidence": 0.9 }, "usd": 0.0 }
+    ]
+  }
+}

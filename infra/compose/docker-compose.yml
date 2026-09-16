@@ -1,0 +1,113 @@
+# =============================================================================
+# Local stack — the control plane with the observability it expects in production.
+#
+#   make compose-up          # or: docker compose -f infra/compose/docker-compose.yml up --build -d
+#   http://127.0.0.1:8080/healthz   API
+#   http://127.0.0.1:9090           Prometheus (scrapes the API's /metrics)
+#   http://127.0.0.1:3000           Grafana (admin/admin, dashboard "Regent" provisioned)
+#
+# Every image is pinned to a version (never `latest`), runs as a non-root user
+# where the image supports it, and gets a read-only root filesystem where the
+# process does not need to write. Configuration is mounted read-only.
+# =============================================================================
+name: regent
+
+services:
+  regent-api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: regent:local
+    env_file:
+      # Copy .env.example to .env at the repository root and fill it in.
+      - path: ../../.env
+        required: false
+    environment:
+      REGENT_LEDGER: /data/ledger.jsonl
+      REGENT_WORKSPACE: /data/workspace
+      PROMETHEUS_URL: http://prometheus:9090
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: regent
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # The audit ledger survives the container. Ship it to write-once storage in prod.
+      - ledger:/data
+      # Bring your own mandates without rebuilding the image.
+      - ../../policies/mandates:/app/policies/mandates:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2).status == 200 else 1)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - prometheus
+      - otel-collector
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    user: "472:472"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      # Local development only. In production Grafana authenticates through SSO.
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"   # OTLP/HTTP in
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    restart: unless-stopped
+
+volumes:
+  ledger:
+  prometheus-data:
+  grafana-data:

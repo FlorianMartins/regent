@@ -1,0 +1,54 @@
+name: Agent misbehaviour
+description: An agent did something wrong, unsafe, or beyond its intent.
+labels: ["agent", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks — this is exactly the feedback the platform is designed to collect. Every run leaves a ledger; the run id
+        lets us replay it. **If the agent did something it should not have been *able* to do, treat it as a security
+        report and use the private advisory instead.**
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options: ["pr-reviewer", "ci-triage", "iac-guardian", "incident-triage", "dependency-steward", "release-scribe"]
+    validations:
+      required: true
+  - type: input
+    id: run
+    attributes:
+      label: Run id
+      description: From the CLI output, the API, or the ledger.
+    validations:
+      required: true
+  - type: textarea
+    id: ledger
+    attributes:
+      label: Ledger excerpt
+      description: "`regent ledger show --run <id>` — redact repository content; keep decisions, prompt ids, tool names."
+      render: json
+  - type: textarea
+    id: what
+    attributes:
+      label: What the agent did, and what it should have done
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of problem
+      options:
+        - "Wrong judgement (bad finding, wrong classification, missed issue)"
+        - "Verification accepted something it should have rejected"
+        - "Verification rejected something correct"
+        - "Action beyond the stated intent (but within the mandate)"
+        - "Cost or duration unexpectedly high"
+    validations:
+      required: true
+  - type: checkboxes
+    id: eval
+    attributes:
+      label: Eval case
+      options:
+        - label: I can turn this into an eval case under `evals/cases/` (or I would like help doing so)

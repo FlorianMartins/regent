@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: regent-config
+data:
+  REGENT_DEFAULT_REPOSITORY: FlorianMartins/regent
+  # dev may use the replay provider to exercise the pipeline without spend.
+  REGENT_PROVIDER: anthropic

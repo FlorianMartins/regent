@@ -1,0 +1,38 @@
+name: Mandate change request
+description: Ask for an agent's mandate to be widened or narrowed for a scope.
+labels: ["mandate", "governance"]
+body:
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options: ["pr-reviewer", "ci-triage", "iac-guardian", "incident-triage", "dependency-steward", "release-scribe"]
+    validations:
+      required: true
+  - type: input
+    id: scope
+    attributes:
+      label: Scope
+      description: Repositories (glob) and environments the change applies to.
+      placeholder: "acme/internal-* · dev, staging"
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Requested change
+      description: Autonomy level, tools, approvals, budget, data classification, verification mode.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Runs in `advisory` mode, eval results, incident history — what shows the wider mandate is safe?
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: How the change is reverted if it goes wrong
+      description: The kill switch is always available; say what else.

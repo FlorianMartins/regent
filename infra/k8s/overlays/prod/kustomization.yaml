@@ -1,0 +1,25 @@
+# prod — the Deployment becomes an Argo Rollout with a canary: 20 % of traffic
+# for 10 minutes while an AnalysisTemplate watches the failure rate of runs,
+# then 50 %, then full. A failed analysis rolls back automatically.
+# Sync is manual: a human clicks, the platform does not deploy itself.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - rollout.yaml
+  - analysistemplate.yaml
+  - service-canary.yaml
+labels:
+  - pairs:
+      environment: prod
+patches:
+  # The Rollout replaces the Deployment: drop the Deployment and point the HPA at the Rollout.
+  - path: delete-deployment.yaml
+    target:
+      kind: Deployment
+      name: regent
+  - path: patch-hpa.yaml
+  - path: patch-resources.yaml
+    target:
+      kind: Rollout
+      name: regent

@@ -1,0 +1,41 @@
+# CodeQL — GitHub's semantic analysis of the Python source. It finds classes of
+# bugs (injection, path traversal, unsafe deserialisation) that pattern-based
+# linters miss, and its alerts appear in the Security tab of the repository.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 3 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (python)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # to upload the results
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          queries: security-extended
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:python"

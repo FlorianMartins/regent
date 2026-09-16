@@ -1,0 +1,13 @@
+# Code owners — a review from an owner is required before these paths change.
+#
+# In an enterprise the handles below would be teams: `@acme/security` for the
+# mandates and prompts (they decide what an agent may do and how it is told to
+# do it), `@acme/platform` for the infrastructure. Widening a mandate is a
+# security decision, and this file is what makes that decision reviewable.
+policies/           @FlorianMartins
+regent/prompts/     @FlorianMartins
+regent/skills/      @FlorianMartins
+regent/core/policy.py @FlorianMartins
+regent/tools/sandbox.py @FlorianMartins
+infra/              @FlorianMartins
+.github/workflows/  @FlorianMartins

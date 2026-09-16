@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: regent-dev
+  namespace: argocd
+spec:
+  project: regent
+  source:
+    repoURL: https://github.com/FlorianMartins/regent.git
+    targetRevision: main
+    path: infra/k8s/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: regent-dev
+  syncPolicy:
+    # dev follows main: what is merged is what runs, drift is corrected.
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
