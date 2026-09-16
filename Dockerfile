@@ -13,7 +13,7 @@
 
 # Pin the digest in production — `python:3.12-slim-bookworm@sha256:<digest>` —
 # and let Dependabot keep it fresh. The tag alone is reproducible enough for CI.
-FROM python:3.12-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 WORKDIR /src
 
@@ -33,7 +33,7 @@ RUN pip install --no-cache-dir --prefix=/install ".[api]"
 # -----------------------------------------------------------------------------
 # Runtime — no build tooling, no root, read-only friendly.
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 LABEL org.opencontainers.image.title="regent" \
       org.opencontainers.image.description="Governed AI agents for DevOps automation" \
