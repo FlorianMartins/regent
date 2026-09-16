@@ -1,0 +1,18 @@
+agent: ci-triage
+repository: acme/example
+payload: { run_id: 777 }
+world:
+  github:
+    "json /repos/*/actions/runs/777": { id: 777, name: CI, status: completed, conclusion: failure, head_sha: abc, head_branch: feat/x, run_attempt: 1, event: push }
+    "json /repos/*/actions/runs/777/jobs": { jobs: [ { id: 1, name: test, conclusion: failure, steps: [] } ] }
+    "json /repos/*/actions/jobs/1/logs": "FAILED tests/test_api.py::test_create - AssertionError: assert 500 == 201\n"
+model:
+  "ci_triage@1":
+    - json: { summary: "A test assertion fails deterministically.", confidence: 0.9, evidence: ["AssertionError: assert 500 == 201"], category: code, failed_jobs: [], root_cause: "test_create returns 500", log_quotes: ["FAILED tests/test_api.py::test_create - AssertionError: assert 500 == 201"], recommend_rerun: false, suggested_fix: "Check the handler for the 500." }
+  "verifier@1":
+    - json: { accept: true, issues: [], confidence: 0.9 }
+expect:
+  status: succeeded
+  analysis: { category: code, recommend_rerun: false }
+  github_writes: ["POST */issues"]
+  github_writes_forbidden: ["POST */rerun-failed-jobs"]

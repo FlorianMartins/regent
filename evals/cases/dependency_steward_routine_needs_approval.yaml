@@ -1,0 +1,15 @@
+agent: dependency-steward
+repository: acme/example
+payload: { number: 42, ci_green: true }
+world:
+  github:
+    "json /repos/*/pulls/42": { number: 42, title: "build(deps): bump httpx from 0.27.0 to 0.27.2", body: "", user: { login: "dependabot[bot]" }, base: { ref: main }, head: { ref: dep, sha: 1 }, changed_files: 1, additions: 1, deletions: 1, labels: [] }
+    "diff /repos/*/pulls/42": "-httpx==0.27.0\n+httpx==0.27.2\n"
+model:
+  "dependency_steward@1":
+    - json: { summary: "Patch release.", confidence: 0.9, evidence: ["patch bump"], package: httpx, from_version: 0.27.0, to_version: 0.27.2, bump: patch, decision: routine, changelog_quotes: ["Fix a regression in timeouts"], security_fix: false }
+  "verifier@1":
+    - json: { accept: true, issues: [], confidence: 0.9 }
+expect:
+  status: awaiting_approval
+  github_writes_forbidden: ["PUT */merge"]

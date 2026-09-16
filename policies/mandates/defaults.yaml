@@ -1,0 +1,66 @@
+# Organisation-wide default mandates. One document per agent.
+#
+# A mandate is the contract an agent runs under. Nothing runs without one, and
+# code changes cannot widen one: only a change to this file (reviewed like any
+# other change, CODEOWNERS = platform + security) can.
+#
+# autonomy        L0_OBSERVE < L1_ADVISE < L2_PROPOSE < L3_ACT_REVERSIBLE (L4_ACT is never granted)
+# allowed_tools   allow-list of tool name globs; anything else is denied
+# requires_approval  tools that need a human even inside the autonomy level
+# max_remote_class   highest data classification that may be sent to a remote LLM
+# verification    required | advisory | none  — independent critic before acting
+# budget          hard ceilings per run
+
+- agent: pr-reviewer
+  autonomy: L1_ADVISE
+  model_tier: balanced
+  allowed_tools: ["github.get_pr", "github.get_pr_diff", "github.list_pr_files", "github.get_file",
+                  "github.create_review", "github.add_labels"]
+  max_remote_class: CONFIDENTIAL   # diffs are confidential; the org accepted the provider's DPA
+  verification: required
+  budget: { max_llm_calls: 4, max_usd: 1.5, max_duration_s: 600 }
+
+- agent: ci-triage
+  autonomy: L3_ACT_REVERSIBLE
+  model_tier: balanced
+  allowed_tools: ["github.get_workflow_run", "github.get_job_logs", "github.list_commits",
+                  "github.comment", "github.create_issue", "github.rerun_failed_jobs"]
+  requires_approval: []
+  max_remote_class: CONFIDENTIAL
+  verification: required
+  budget: { max_llm_calls: 4, max_usd: 1.0, max_duration_s: 600 }
+
+- agent: iac-guardian
+  autonomy: L2_PROPOSE
+  model_tier: deep
+  allowed_tools: ["cloudguard.scan", "fs.read", "fs.list", "fs.write", "github.create_pull_request"]
+  max_remote_class: CONFIDENTIAL
+  verification: required
+  budget: { max_llm_calls: 6, max_usd: 3.0, max_duration_s: 900 }
+
+- agent: incident-triage
+  autonomy: L1_ADVISE
+  model_tier: deep
+  allowed_tools: ["metrics.query", "github.list_commits", "github.compare", "github.comment",
+                  "github.create_issue", "exec.kubectl.rollout.status"]
+  max_remote_class: INTERNAL       # alerts may carry customer data: keep RESTRICTED local
+  verification: advisory           # speed matters during an incident; the output is advice only
+  budget: { max_llm_calls: 4, max_usd: 2.0, max_duration_s: 300 }
+
+- agent: dependency-steward
+  autonomy: L3_ACT_REVERSIBLE
+  model_tier: fast
+  allowed_tools: ["github.get_pr", "github.get_pr_diff", "github.list_pr_files", "github.get_workflow_run",
+                  "github.comment", "github.add_labels", "github.merge_pull_request"]
+  requires_approval: ["github.merge_pull_request"]   # lifted per repository, see overrides
+  max_remote_class: INTERNAL
+  verification: required
+  budget: { max_llm_calls: 3, max_usd: 0.5, max_duration_s: 300 }
+
+- agent: release-scribe
+  autonomy: L2_PROPOSE
+  model_tier: fast
+  allowed_tools: ["github.compare", "github.list_commits", "github.create_release"]
+  max_remote_class: INTERNAL
+  verification: advisory
+  budget: { max_llm_calls: 2, max_usd: 0.3, max_duration_s: 300 }

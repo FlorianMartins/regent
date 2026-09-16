@@ -1,0 +1,53 @@
+# Eval case — the reviewer must flag a string-built SQL query and post a review.
+agent: pr-reviewer
+repository: acme/example
+event: pull_request.opened
+payload: { number: 42 }
+dry_run: false
+world:
+  github:
+    "json /repos/*/pulls/42":
+      number: 42
+      title: "feat(db): faster user lookup"
+      body: "Speeds up lookups."
+      user: { login: alice }
+      base: { ref: main }
+      head: { ref: feat/lookup, sha: deadbeef }
+      changed_files: 1
+      additions: 3
+      deletions: 2
+      labels: []
+    "diff /repos/*/pulls/42": |
+      diff --git a/app/db.py b/app/db.py
+      --- a/app/db.py
+      +++ b/app/db.py
+      @@ -1,4 +1,6 @@
+       import sqlite3
+      -def find(user):
+      -    return db.execute("SELECT * FROM users WHERE name = ?", (user,))
+      +def find(user):
+      +    query = "SELECT * FROM users WHERE name = '" + user + "'"
+      +    return db.execute(query)
+model:
+  "pr_reviewer@1":
+    - json:
+        summary: "One critical SQL injection in app/db.py."
+        confidence: 0.92
+        evidence: ["app/db.py:4 builds SQL by string concatenation"]
+        findings:
+          - { file: app/db.py, line: 4, severity: critical, category: security, title: "SQL injection", detail: "user is concatenated into the query; use a parameterised query.", quote: "query = \"SELECT * FROM users WHERE name = '\" + user + \"'\"", suggestion: "" }
+        diff_truncated: false
+  "verifier@1":
+    - json: { accept: true, issues: [], confidence: 0.9 }
+expect:
+  status: succeeded
+  analysis:
+    findings: { min_len: 1 }
+    findings.0.severity: critical
+    findings.0.category: security
+    findings.0.file: app/db.py
+  actions:
+    findings: 1
+  github_writes: ["POST /repos/acme/example/pulls/42/reviews", "POST /repos/acme/example/issues/42/labels"]
+  github_writes_forbidden: ["PUT */merge"]
+  max_usd: 1.5

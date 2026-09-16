@@ -1,0 +1,17 @@
+agent: ci-triage
+repository: acme/example
+payload: { run_id: 777, pr_number: 42 }
+world:
+  github:
+    "json /repos/*/actions/runs/777": { id: 777, name: CI, status: completed, conclusion: failure, head_sha: abc, head_branch: feat/x, run_attempt: 1, event: pull_request }
+    "json /repos/*/actions/runs/777/jobs": { jobs: [ { id: 1, name: test, conclusion: failure, steps: [ { name: pytest, conclusion: failure } ] } ] }
+    "json /repos/*/actions/jobs/1/logs": "collecting...\nE   ConnectionResetError: connection reset by peer while pulling image\n"
+model:
+  "ci_triage@1":
+    - json: { summary: "Registry connection reset while pulling the image.", confidence: 0.8, evidence: ["ConnectionResetError: connection reset by peer"], category: infrastructure, failed_jobs: [], root_cause: "registry hiccup", log_quotes: ["ConnectionResetError: connection reset by peer while pulling image"], recommend_rerun: true, suggested_fix: "" }
+  "verifier@1":
+    - json: { accept: true, issues: [], confidence: 0.85 }
+expect:
+  status: succeeded
+  analysis: { category: { in: [infrastructure, flaky] }, recommend_rerun: true }
+  github_writes: ["POST */actions/runs/777/rerun-failed-jobs", "POST */issues/42/comments"]

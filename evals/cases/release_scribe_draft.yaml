@@ -1,0 +1,14 @@
+agent: release-scribe
+repository: acme/example
+payload: { base: v1.0.0, head: v1.1.0 }
+world:
+  github:
+    "json /repos/*/compare/*": { ahead_by: 2, commits: [ { sha: aaaaaaaaaaaa, commit: { message: "feat(api): add /runs" } }, { sha: bbbbbbbbbbbb, commit: { message: "fix!: drop legacy flag" } } ] }
+model:
+  "release_scribe@1":
+    - json: { summary: "Two changes.", confidence: 0.9, evidence: [], version: v1.1.0, breaking: ["drop legacy flag"], features: ["add /runs"], fixes: [], security: [], other: [] }
+  "verifier@1":
+    - json: { accept: true, issues: [], confidence: 0.9 }
+expect:
+  status: succeeded
+  github_writes: ["POST */releases"]
