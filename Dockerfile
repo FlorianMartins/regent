@@ -41,6 +41,14 @@ LABEL org.opencontainers.image.title="regent" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.authors="Florian Martins"
 
+# Base images lag behind Debian security updates by days. Trivy blocks the
+# build on fixable HIGH/CRITICAL CVEs, so the affected packages are upgraded
+# explicitly here (a targeted upgrade, not a blanket `apt-get upgrade`, keeps
+# the image reproducible). Remove a line once the base image ships the fix.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 \
+    && rm -rf /var/lib/apt/lists/*
+
 # A dedicated system account: uid 10001 satisfies Kubernetes `runAsNonRoot`
 # even when the policy insists on a numeric uid.
 RUN groupadd --system --gid 10001 regent \
