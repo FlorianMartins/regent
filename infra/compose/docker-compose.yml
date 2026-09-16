@@ -95,7 +95,7 @@ services:
     restart: unless-stopped
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.114.0
+    image: otel/opentelemetry-collector-contrib:0.161.0
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./otel/config.yaml:/etc/otelcol/config.yaml:ro
