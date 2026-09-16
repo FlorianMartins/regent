@@ -11,7 +11,7 @@ what it did, and who allowed it.*
 [![CI](https://github.com/FlorianMartins/regent/actions/workflows/ci.yml/badge.svg)](https://github.com/FlorianMartins/regent/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/FlorianMartins/regent/actions/workflows/codeql.yml/badge.svg)](https://github.com/FlorianMartins/regent/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/FlorianMartins/regent/badge)](https://scorecard.dev/viewer/?uri=github.com/FlorianMartins/regent)
-[![SLSA 3](https://slsa.dev/images/gh-badge-level3.svg)](https://github.com/FlorianMartins/regent/attestations)
+[![SLSA Build L2](https://slsa.dev/images/gh-badge-level2.svg)](https://github.com/FlorianMartins/regent/attestations)
 [![Docs](https://img.shields.io/badge/docs-florianmartins.github.io%2Fregent-1f6feb)](https://florianmartins.github.io/regent/)
 [![Python](https://img.shields.io/badge/python-3.11%20|%203.12%20|%203.13-3776ab?logo=python&logoColor=white)](https://www.python.org)
 [![Types: mypy strict](https://img.shields.io/badge/types-mypy%20strict-2a6db2.svg)](https://mypy-lang.org/)

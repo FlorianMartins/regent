@@ -1,0 +1,106 @@
+site_name: Regent
+site_description: Governed AI agents for DevOps automation — every action under an explicit mandate.
+site_url: https://florianmartins.github.io/regent/
+repo_url: https://github.com/FlorianMartins/regent
+repo_name: FlorianMartins/regent
+edit_uri: edit/main/docs/
+copyright: MIT License — Florian Martins
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mermaid2
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
+
+nav:
+  - Home: index.md
+  - Start here:
+      - Guided tour (for everyone): 00-guided-tour.md
+      - Vision and business case: 01-vision-and-business-case.md
+      - Glossary: glossary.md
+      - Dossier de présentation (FR): PRESENTATION.fr.md
+  - Architecture:
+      - Architecture: 02-architecture.md
+      - Agent catalogue: 03-agent-catalogue.md
+      - Workflows: 04-workflows.md
+      - Technology radar: 11-technology-radar.md
+  - Governance & security:
+      - Governance and autonomy: 05-governance-and-autonomy.md
+      - Security: 06-security.md
+      - Certifications and attestations: 12-certifications-and-attestations.md
+  - Operations:
+      - Observability and evals (LLMOps): 07-observability-and-evals.md
+      - FinOps: 08-finops.md
+      - Platform and delivery: 09-platform-and-delivery.md
+      - Operating model: 10-operating-model.md
+  - Runbooks:
+      - Overview: runbooks/README.md
+      - Kill switch: runbooks/kill-switch.md
+      - Agent misbehaving: runbooks/agent-misbehaving.md
+      - Budget exceeded: runbooks/budget-exceeded.md
+      - Ledger verification: runbooks/ledger-verification.md
+      - Rotate credentials: runbooks/rotate-credentials.md
+      - Approve a run: runbooks/approve-a-run.md
+      - Onboard a repository: runbooks/onboard-a-repository.md
+      - Add an agent: runbooks/add-an-agent.md
+      - Change a mandate: runbooks/change-a-mandate.md
+  - Decisions (ADR):
+      - Index: adr/README.md
+      - ADR-0001 Governed autonomy via mandates: adr/ADR-0001-governed-autonomy-via-mandates.md
+      - ADR-0002 Analyse, verify, act: adr/ADR-0002-analyse-verify-act.md
+      - ADR-0003 No agent framework: adr/ADR-0003-no-agent-framework.md
+      - ADR-0004 LLM gateway as the single door: adr/ADR-0004-llm-gateway-single-door.md
+      - ADR-0005 Model tiers, not model names: adr/ADR-0005-model-tiers.md
+      - ADR-0006 Hash-chained ledger: adr/ADR-0006-hash-chained-ledger.md
+      - ADR-0007 Policy in-process, OPA at admission: adr/ADR-0007-policy-engine.md
+      - ADR-0008 Prompts and skills as code: adr/ADR-0008-prompts-and-skills-as-code.md
+      - ADR-0009 Run store: adr/ADR-0009-run-store.md
+      - ADR-0010 Approvals by re-run: adr/ADR-0010-approvals-by-rerun.md
+      - ADR-0011 Phase gate: adr/ADR-0011-phase-gate.md
+      - ADR-0012 Data classification and local routing: adr/ADR-0012-data-classification.md
+      - ADR-0013 CloudGuard as ground truth: adr/ADR-0013-cloudguard-ground-truth.md
+      - ADR-0014 Pipeline-embedded first: adr/ADR-0014-pipeline-embedded-first.md
+      - ADR-0015 Supply-chain attestations: adr/ADR-0015-supply-chain-attestations.md
+      - ADR-0016 Offline evals in CI: adr/ADR-0016-offline-evals.md

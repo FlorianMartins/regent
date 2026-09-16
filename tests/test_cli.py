@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 from regent import __version__
 from regent.cli.main import app
 
-cli = CliRunner(env={"COLUMNS": "250", "TERM": "dumb"})
+cli = CliRunner(env={"COLUMNS": "250", "TERM": "dumb", "FORCE_COLOR": None, "NO_COLOR": "1"})
 
 
 def test_version():
@@ -125,5 +125,5 @@ def test_run_rejects_bad_config(monkeypatch):
 
 
 def test_evals_command(tmp_path: Path):
-    r = cli.invoke(app, ["evals", "--report", str(tmp_path / "r.json")])
-    assert r.exit_code == 0 and "passed" in r.output and (tmp_path / "r.json").exists()
+    r = cli.invoke(app, ["evals", "--report", str(tmp_path / "reports" / "r.json")])
+    assert r.exit_code == 0 and "passed" in r.output and (tmp_path / "reports" / "r.json").exists()

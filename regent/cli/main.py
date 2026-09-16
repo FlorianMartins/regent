@@ -96,6 +96,7 @@ def run(
         raise typer.Exit(EXIT_USAGE) from None
     _print_record(record)
     if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(record.model_dump_json(indent=2))
     raise typer.Exit(EXIT_OK if record.status is RunStatus.SUCCEEDED else EXIT_NOT_DONE)
 
@@ -315,6 +316,7 @@ def evals(
         )
     console.print(table)
     if report is not None:
+        report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(json.dumps([r.model_dump() for r in results], indent=2))
     failed = sum(1 for r in results if not r.passed)
     console.print(f"{len(results) - failed}/{len(results)} passed")
