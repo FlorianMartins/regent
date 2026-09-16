@@ -377,17 +377,29 @@ jobs:
           docker run --rm regent:ci --version
           docker run --rm regent:ci agents
 
-      - name: Trivy — known CVEs in the image (CRITICAL/HIGH block)
-        # ignore-unfixed: a CVE with no upstream fix cannot be acted on today;
-        # it is still visible in the SARIF for tracking.
+      - name: Trivy — the gate (fixable CRITICAL/HIGH CVEs block the build)
+        # ignore-unfixed: a CVE with no upstream fix cannot be acted on today.
+        # Table format on purpose: with `format: sarif` the action scans every
+        # severity regardless of the `severity` input, so the gate and the
+        # report are two steps.
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: regent:ci
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: false
+
+      - name: Trivy — the report (every severity, for code scanning)
+        if: always()
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: regent:ci
           format: sarif
           output: trivy.sarif
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
+          skip-setup-trivy: true # installed by the previous step
 
       - name: Upload the Trivy SARIF
         if: always()
