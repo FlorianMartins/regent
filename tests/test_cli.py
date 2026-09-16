@@ -1,12 +1,43 @@
 import json
+import re
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from regent import __version__
 from regent.cli.main import app
 
-cli = CliRunner(env={"COLUMNS": "250", "TERM": "dumb", "FORCE_COLOR": None, "NO_COLOR": "1"})
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+class PlainRunner(CliRunner):
+    """CliRunner whose output is stripped of ANSI codes: CI sets FORCE_COLOR."""
+
+    def invoke(self, *args, **kwargs):
+        result = super().invoke(*args, **kwargs)
+        result.output_bytes = _ANSI.sub("", result.output).encode()
+        return result
+
+
+cli = PlainRunner(env={"COLUMNS": "250", "TERM": "dumb"})
+
+
+@pytest.fixture(autouse=True)
+def _wide_plain_console(monkeypatch):
+    """Wide, colour-free consoles whatever the CI terminal claims."""
+    from rich.console import Console
+
+    from regent.cli import main
+
+    monkeypatch.setattr(
+        main, "console", Console(width=250, force_terminal=False, no_color=True, highlight=False)
+    )
+    monkeypatch.setattr(
+        main,
+        "err",
+        Console(width=250, force_terminal=False, no_color=True, highlight=False, stderr=True),
+    )
 
 
 def test_version():
