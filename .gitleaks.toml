@@ -1,0 +1,9 @@
+# Gitleaks configuration (used by the "Secret scanning" CI job).
+# Keep every default rule; only exempt the redaction tests, whose fixtures are
+# fake credentials by design (the redactor must recognize them).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake credentials used as fixtures by the redaction tests"
+paths = ['''^tests/test_redaction\.py$''']
