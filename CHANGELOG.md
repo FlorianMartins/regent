@@ -29,4 +29,18 @@ All notable changes to Regent are documented here. The format follows
 - **Deployment** — Docker Compose stack (API, Prometheus, Grafana, OTel collector),
   Kustomize base + overlays with Argo CD and Argo Rollouts, Terraform bootstrap for AWS.
 
+### Security
+
+- **Reproducible dependencies** — `uv.lock` pins every package; CI installs with
+  `uv sync --locked` and the image installs the lock with `pip --require-hashes`.
+  CloudGuard-IaC is pinned to a commit instead of tracking `main`.
+- **Pinned CI** — every GitHub Action and both base images are pinned by SHA/digest
+  (version kept in a comment for Dependabot); semgrep is pinned too.
+- **Hardened workflows** — no persisted git credentials on checkout, PR event data
+  passed through the environment instead of template expansion, the release created
+  with the `gh` CLI instead of a third-party action holding `contents: write`.
+- **New gates** — `zizmor` audits the workflows, `dependency-review` blocks a PR that
+  adds a HIGH/CRITICAL-vulnerable dependency.
+- **Dependabot** — `uv` ecosystem, grouped minor/patch updates, 7-day cooldown.
+
 [Unreleased]: https://github.com/FlorianMartins/regent/compare/main...HEAD
