@@ -11,29 +11,34 @@
 #   docker run --rm -e REGENT_PROVIDER=replay regent agents        # use the CLI
 # =============================================================================
 
-# Pin the digest in production — `python:3.12-slim-bookworm@sha256:<digest>` —
-# and let Dependabot keep it fresh. The tag alone is reproducible enough for CI.
-FROM python:3.12-slim-bookworm AS builder
+# Base images are pinned by digest (tag kept for readability); Dependabot
+# bumps tag and digest together, so the image is the same on every rebuild.
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS builder
+
+# uv only exports the lockfile here; it never reaches the runtime stage.
+COPY --from=ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 /uv /usr/local/bin/uv
 
 WORKDIR /src
 
 # Copy only what the build backend needs. The layer is cached until one of
 # these files changes, which keeps rebuilds fast.
-COPY pyproject.toml README.md ./
+COPY pyproject.toml uv.lock README.md ./
 COPY regent/ ./regent/
 COPY policies/mandates/ ./policies/mandates/
 
 # Install into a prefix we can copy wholesale into the runtime stage.
+# The dependencies are exactly the ones in uv.lock, each checked against its
+# SHA-256 (--require-hashes); then the project itself, without dependencies.
 # The `api` extra brings FastAPI + uvicorn; the CLI works without it.
-# "." is the project itself: its dependencies carry version ranges in
-# pyproject.toml and Dependabot bumps them, so the pinning rule does not apply.
-# cloudguard:ignore CG_DOCKER_009 installing the project itself, versions live in pyproject.toml
-RUN pip install --no-cache-dir --prefix=/install ".[api]"
+# cloudguard:ignore CG_DOCKER_009 every dependency is pinned and hash-checked by uv.lock; "." is the project itself
+RUN uv export --frozen --no-dev --extra api --no-emit-project -o /tmp/requirements.txt \
+    && pip install --no-cache-dir --prefix=/install --require-hashes -r /tmp/requirements.txt \
+    && pip install --no-cache-dir --prefix=/install --no-deps .
 
 # -----------------------------------------------------------------------------
 # Runtime — no build tooling, no root, read-only friendly.
 # -----------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS runtime
 
 LABEL org.opencontainers.image.title="regent" \
       org.opencontainers.image.description="Governed AI agents for DevOps automation" \

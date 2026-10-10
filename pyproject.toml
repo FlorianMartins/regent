@@ -54,10 +54,11 @@ dev = [
   "types-PyYAML",
   "bandit[toml]>=1.7",
   "actionlint-py>=1.7",
+  "zizmor>=1.30",
   "pip-audit>=2.7",
   "build>=1.2",
   "twine>=5.1",
-  "cloudguard-iac @ git+https://github.com/FlorianMartins/cloudguard-iac@main",
+  "cloudguard-iac @ git+https://github.com/FlorianMartins/cloudguard-iac@d26822b021d828f1e27070a0e9412605162bb6ea",
 ]
 docs = [
   "mkdocs-material>=9.5",

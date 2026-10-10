@@ -2,10 +2,11 @@
 # CI — every gate a change must pass before it can reach `main`.
 #
 # Reading guide for newcomers: each job answers one question.
-#   quality      Is the code well-formed?          (ruff, mypy, actionlint)
+#   quality      Is the code well-formed?          (ruff, mypy, actionlint, zizmor)
 #   test         Does it behave?                   (pytest on 3 Python versions, offline)
 #   sast         Does our own code have known weaknesses? (bandit, pip-audit, semgrep)
 #   secrets      Did a credential slip into git?   (gitleaks)
+#   deps-review  Does this PR add a vulnerable dependency? (dependency-review)
 #   iac-security Is the infrastructure we ship secure? (CloudGuard-IaC, Conftest/OPA)
 #   policy       Do the agent mandates respect the invariants? (regent policy-check)
 #   evals        Do the agents still behave on recorded cases? (regent evals)
@@ -53,16 +54,19 @@ jobs:
     name: Lint & types
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          activate-environment: true
 
-      - name: Install the project
-        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Install the project (locked by uv.lock)
+        run: uv sync --locked --extra dev
 
       - name: Ruff — lint
         run: ruff check --output-format=github .
@@ -78,6 +82,13 @@ jobs:
         # so the pipeline cannot be the thing that catches it.
         run: actionlint
 
+      - name: Zizmor — security audit of the workflows
+        # Unpinned actions, template injection, credentials persisted on disk,
+        # over-broad permissions: the CI is part of the attack surface.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --format github .github/workflows
+
   # ---------------------------------------------------------------------------
   # 2. Tests — every supported Python version, fully offline
   # ---------------------------------------------------------------------------
@@ -89,23 +100,26 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          activate-environment: true
 
-      - name: Install the project
-        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Install the project (locked by uv.lock)
+        run: uv sync --locked --extra dev
 
       - name: Pytest (replay provider, fake GitHub — no network, no key)
         run: pytest --cov=regent --cov-report=term-missing --cov-report=xml
 
       - name: Upload the coverage report
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-xml
           path: coverage.xml
@@ -118,16 +132,19 @@ jobs:
     name: SAST & dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          activate-environment: true
 
-      - name: Install the project
-        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Install the project (locked by uv.lock)
+        run: uv sync --locked --extra dev
 
       - name: Bandit — Python SAST
         run: bandit -q -c pyproject.toml -r regent
@@ -141,8 +158,7 @@ jobs:
         # hiccup must not turn into a red build. Bandit above is the blocking gate.
         continue-on-error: true
         run: |
-          pip install semgrep
-          semgrep scan --config p/python --config p/security-audit --error --quiet regent
+          uvx semgrep==1.180.0 scan --config p/python --config p/security-audit --error --quiet regent
 
   # ---------------------------------------------------------------------------
   # 4. Secrets — a credential in the history is an incident, not a lint warning
@@ -151,16 +167,37 @@ jobs:
     name: Secret scanning
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           # gitleaks scans commits, so it needs the history, not just the tree.
           fetch-depth: 0
 
       - name: Gitleaks
         # Free for personal repositories; organisations need GITLEAKS_LICENSE.
-        uses: gitleaks/gitleaks-action@v3
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # 4b. Dependency review — a PR must not introduce a known-vulnerable package
+  # ---------------------------------------------------------------------------
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Dependency review
+        # Diffs the dependency graph of the PR against main (pip, uv.lock,
+        # Actions, Docker) and blocks on a HIGH or CRITICAL advisory.
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: never
 
   # ---------------------------------------------------------------------------
   # 5. Infrastructure security — the Terraform, Kubernetes and Docker we ship
@@ -169,18 +206,22 @@ jobs:
     name: IaC security (CloudGuard + Conftest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          activate-environment: true
 
       - name: Install CloudGuard-IaC
         # The DevSecOps scanner this platform builds on. It reads Terraform and
         # Dockerfiles, never runs them, never needs cloud credentials.
-        run: |
-          python -m pip install --upgrade pip
-          pip install "cloudguard-iac @ git+https://github.com/FlorianMartins/cloudguard-iac@main"
+        # Pinned to a commit through uv.lock — never a moving branch.
+        run: uv sync --locked --extra dev
 
       - name: CloudGuard — Terraform, Compose, Kubernetes and the Dockerfile
         # MEDIUM and above blocks: the infrastructure of a security platform is
@@ -193,7 +234,7 @@ jobs:
       - name: Upload the CloudGuard SARIF
         # Code scanning needs GHAS on private repositories; on public ones it is free.
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: reports/cloudguard.sarif
           category: cloudguard-iac
@@ -238,16 +279,19 @@ jobs:
     name: Mandate invariants
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          activate-environment: true
 
-      - name: Install the project
-        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Install the project (locked by uv.lock)
+        run: uv sync --locked
 
       - name: regent policy-check
         # Refuses L4_ACT, wildcard allow-lists, unknown tools, budgets above 20 USD,
@@ -264,16 +308,19 @@ jobs:
     name: Agent evals (offline)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          activate-environment: true
 
-      - name: Install the project
-        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+      - name: Install the project (locked by uv.lock)
+        run: uv sync --locked --extra dev
 
       - name: Run the eval suite with the replay provider
         run: regent evals --report reports/evals.json
@@ -291,7 +338,7 @@ jobs:
 
       - name: Upload the eval report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: evals-report
           path: reports/evals.json
@@ -304,18 +351,21 @@ jobs:
     name: Docs build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          activate-environment: true
 
       - name: Build the site (strict)
         run: |
           if [ -f mkdocs.yml ]; then
-            python -m pip install --upgrade pip && pip install -e ".[docs]"
+            uv sync --locked --extra docs
             mkdocs build --strict
           else
             echo "no mkdocs.yml yet — nothing to build"
@@ -329,9 +379,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_DEFAULT }}
 
@@ -350,7 +402,7 @@ jobs:
           /tmp/smoke/bin/regent skills
 
       - name: Upload the distribution
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
@@ -367,7 +419,9 @@ jobs:
       contents: read
       security-events: write # SARIF upload of the Trivy results
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Build the image
         run: docker build -t regent:ci .
@@ -382,7 +436,7 @@ jobs:
         # Table format on purpose: with `format: sarif` the action scans every
         # severity regardless of the `severity` input, so the gate and the
         # report are two steps.
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: regent:ci
           format: table
@@ -393,7 +447,7 @@ jobs:
 
       - name: Trivy — the report (every severity, for code scanning)
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: regent:ci
           format: sarif
@@ -404,14 +458,14 @@ jobs:
       - name: Upload the Trivy SARIF
         if: always()
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           sarif_file: trivy.sarif
           category: trivy-image
 
       - name: SBOM — what exactly is inside the image (SPDX)
         # Syft lists every package with its version; the release workflow attests it.
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           image: regent:ci
           format: spdx-json
@@ -419,7 +473,7 @@ jobs:
           upload-artifact: false
 
       - name: Upload the SBOM
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom-spdx
           path: sbom.spdx.json
@@ -431,7 +485,7 @@ jobs:
   ci:
     name: CI complete
     runs-on: ubuntu-latest
-    needs: [quality, test, sast, secrets, iac-security, policy, evals, docs, build, container]
+    needs: [quality, test, sast, secrets, dependency-review, iac-security, policy, evals, docs, build, container]
     if: always()
     steps:
       - name: Fail when any job failed
@@ -440,7 +494,8 @@ jobs:
           results='${{ join(needs.*.result, ' ') }}'
           echo "job results: $results"
           for result in $results; do
-            if [ "$result" != "success" ]; then
+            # "skipped" is legitimate: dependency-review only runs on pull requests.
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
               echo "::error::a required job did not succeed"
               exit 1
             fi

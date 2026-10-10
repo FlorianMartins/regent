@@ -22,8 +22,13 @@ $(VENV):
 	$(PIP) install --upgrade pip
 
 .PHONY: install
-install: $(VENV) ## Create the virtualenv and install the project with the dev and docs extras
-	$(PIP) install -e ".[dev,docs]"
+install: ## Create the virtualenv and install the exact locked dependencies (uv.lock)
+	@if command -v uv >/dev/null 2>&1; then \
+		uv sync --locked --all-extras; \
+	else \
+		$(MAKE) $(VENV) && $(PIP) install -e ".[dev,docs]"; \
+		echo "⚠ uv not found: installed from version ranges, not from uv.lock — https://docs.astral.sh/uv/"; \
+	fi
 	@echo "✅ ready — run '$(BIN)/regent --help'"
 
 .PHONY: clean
@@ -36,11 +41,16 @@ clean: ## Remove build, cache and report artefacts (keeps the ledger)
 # Quality gates — the same commands the CI pipeline runs
 # ---------------------------------------------------------------------------
 
+.PHONY: lock
+lock: ## Refresh uv.lock after changing a dependency in pyproject.toml
+	uv lock
+
 .PHONY: lint
 lint: ## Lint the Python code, the formatting and the GitHub Actions workflows
 	$(BIN)/ruff check .
 	$(BIN)/ruff format --check .
 	$(BIN)/actionlint
+	$(BIN)/zizmor .github/workflows
 
 .PHONY: format
 format: ## Format the code and fix what can be fixed

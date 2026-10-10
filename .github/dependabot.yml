@@ -3,7 +3,7 @@ version: 2
 updates:
   # Python dependencies — a vulnerable transitive package is a supply-chain issue,
   # and pip-audit only tells us after the fact. dependency-steward assesses these PRs.
-  - package-ecosystem: pip
+  - package-ecosystem: uv # reads pyproject.toml and keeps uv.lock in step
     directory: "/"
     schedule:
       interval: weekly
@@ -13,9 +13,14 @@ updates:
     labels: ["dependencies"]
     commit-message:
       prefix: "chore(deps)"
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
 
-  # The actions used by the pipelines. Pinned to a major version, so this catches
-  # deprecations (Node runtime, for one) before the runners force them on us.
+  # The actions used by the pipelines. Pinned to a commit SHA (version in a
+  # comment): Dependabot bumps both, and a re-pointed tag cannot slip in.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -23,6 +28,11 @@ updates:
     labels: ["dependencies", "ci"]
     commit-message:
       prefix: "chore(ci)"
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
 
   # The base image of the control plane.
   - package-ecosystem: docker
@@ -32,6 +42,11 @@ updates:
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "chore(docker)"
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
 
   # The images of the local observability stack.
   - package-ecosystem: docker-compose
@@ -41,6 +56,11 @@ updates:
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "chore(compose)"
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
 
   # Terraform providers of the AWS bootstrap.
   - package-ecosystem: terraform
@@ -50,3 +70,8 @@ updates:
     labels: ["dependencies", "terraform"]
     commit-message:
       prefix: "chore(terraform)"
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
